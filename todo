@@ -1,0 +1,122 @@
+#!/bin/bash
+
+TODO_FILE="$HOME/bin/todolist/todo_list.txt"
+
+list_todos() {
+    if [ -f "$TODO_FILE" ]; then
+        nl "$TODO_FILE" | while read -r line; do
+            if [[ "$line" == *"PRIORITY"* ]]; then
+                echo -e "\033[31m$(echo "$line" | sed 's/ PRIORITY//')\033[0m"  
+            elif [[ "$line" == *"DONE"* ]]; then
+                echo -e "\033[32m$(echo "$line" | sed 's/ DONE//')\033[0m"  # Tâche terminée en vert
+            else
+                echo "$line"  
+            fi
+        done
+    else
+        echo "Aucune tâche enregistrée."
+    fi
+}
+
+add_todo() {
+    TASK="$1"
+    echo "$TASK" >> "$TODO_FILE"
+    echo "Tâche ajoutée : $TASK"
+}
+
+remove_todo() {
+    if [ -f "$TODO_FILE" ]; then
+        sed -i.bak "${1}d" "$TODO_FILE"
+        echo "Tâche numéro $1 supprimée."
+    else
+        echo "Le fichier des tâches est vide."
+    fi
+}
+
+prioritize_task() {
+    TASK_NUM=$1
+    TEMP_FILE=$(mktemp)
+
+    if [ -f "$TODO_FILE" ]; then
+        sed "${TASK_NUM}q;d" "$TODO_FILE" > "$TEMP_FILE"  
+
+        sed -i.bak "${TASK_NUM}d" "$TODO_FILE" 
+        sed -i "1s/^/$(cat $TEMP_FILE) PRIORITY\n/" "$TODO_FILE"  
+
+        echo -e "\033[31mTâche priorisée : \033[1m$(cat $TEMP_FILE)\033[0m"  
+        rm "$TEMP_FILE"
+    else
+        echo "Le fichier des tâches est vide."
+    fi
+}
+
+deprioritize_task() {
+    TASK_NUM=$1
+    TEMP_FILE=$(mktemp)
+
+    if [ -f "$TODO_FILE" ]; then
+        sed "${TASK_NUM}q;d" "$TODO_FILE" > "$TEMP_FILE"  
+
+        sed -i.bak "${TASK_NUM}d" "$TODO_FILE"  
+        sed -i "2a $(cat $TEMP_FILE | sed 's/ PRIORITY//')" "$TODO_FILE"  
+
+        echo "Tâche dépriorisée : $(cat $TEMP_FILE)"
+
+        rm "$TEMP_FILE"
+    else
+        echo "Le fichier des tâches est vide."
+    fi
+}
+
+mark_done() {
+    TASK_NUM=$1
+    TEMP_FILE=$(mktemp)
+
+    if [ -f "$TODO_FILE" ]; then
+        sed "${TASK_NUM}q;d" "$TODO_FILE" > "$TEMP_FILE"  # Extraire la tâche à marquer comme terminée
+
+        sed -i.bak "${TASK_NUM}d" "$TODO_FILE"  # Supprimer la tâche du fichier original
+        sed -i "2a $(cat $TEMP_FILE) DONE" "$TODO_FILE"  # Ajouter "DONE" à la tâche et la mettre à la fin
+
+        echo -e "\033[32mTâche marquée comme terminée : $(cat $TEMP_FILE)\033[0m"  # Afficher en vert
+        rm "$TEMP_FILE"
+    else
+        echo "Le fichier des tâches est vide."
+    fi
+}
+
+if [ "$1" == "add" ]; then
+    if [ -z "$2" ]; then
+        echo "Usage : todo add <tâche>"
+    else
+        add_todo "$2"
+    fi
+elif [ "$1" == "list" ]; then
+    list_todos
+elif [ "$1" == "remove" ]; then
+    if [[ "$2" =~ ^[0-9]+$ ]]; then  
+        remove_todo "$2"
+    else
+        echo "Veuillez spécifier un numéro de tâche valide."
+    fi
+elif [ "$1" == "pri" ]; then
+    if [[ "$2" =~ ^[0-9]+$ ]]; then  
+        prioritize_task "$2"
+    else
+        echo "Veuillez spécifier un numéro de tâche valide pour prioriser."
+    fi
+elif [ "$1" == "depri" ]; then
+    if [[ "$2" =~ ^[0-9]+$ ]]; then  
+        deprioritize_task "$2"
+    else
+        echo "Veuillez spécifier un numéro de tâche valide pour déprioriser."
+    fi
+elif [ "$1" == "done" ]; then
+    if [[ "$2" =~ ^[0-9]+$ ]]; then  
+        mark_done "$2"
+    else
+        echo "Veuillez spécifier un numéro de tâche valide pour marquer comme terminée."
+    fi
+else
+    echo "Usage : todo add <tâche> | todo list | todo remove <numéro> | todo pri <numéro> | todo depri <numéro> | todo done <numéro>"
+fi
