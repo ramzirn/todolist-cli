@@ -4,13 +4,47 @@ TODO_FILE="$HOME/bin/todolist/todo_list.txt"
 
 list_todos() {
     if [ -f "$TODO_FILE" ]; then
-        nl "$TODO_FILE" | while read -r line; do
-            if [[ "$line" == *"PRIORITY"* ]]; then
-                echo -e "\033[31m$(echo "$line" | sed 's/ PRIORITY//')\033[0m"  
-            elif [[ "$line" == *"DONE"* ]]; then
-                echo -e "\033[32m$(echo "$line" | sed 's/ DONE//')\033[0m"  # Tâche terminée en vert
+        local i=1
+        local j=1
+        local lignes_done=()
+        local lignes_todo=()
+
+        while IFS= read -r line; do
+            if [[ "$line" == *"DONE"* ]]; then
+                lignes_done+=("$j\t$(echo "$line" | sed 's/ DONE//')")
             else
-                echo "$line"  
+                lignes_todo+=("$i\t$line")
+                ((i++))
+            fi
+            ((j++))
+        done < "$TODO_FILE"
+
+        # Afficher d'abord les tâches non terminées
+        for task in "${lignes_todo[@]}"; do
+            echo -e "$task"
+        done
+
+        # Ensuite, les tâches DONE en vert
+        for task in "${lignes_done[@]}"; do
+            echo -e "\033[32m$task\033[0m"
+        done
+    else
+        echo "Aucune tâche enregistrée."
+    fi
+}
+list_todos_by_date() {
+    local date_recherchee="$1"
+    if [ -z "$date_recherchee" ]; then
+        echo "Usage : todo date <JJ-MM-AAAA>"
+        return 1
+    fi
+
+    if [ -f "$TODO_FILE" ]; then
+        grep -nE "Due: ${date_recherchee}" "$TODO_FILE" | while IFS=: read -r linenum task; do
+            if [[ "$task" == *"DONE"* ]]; then
+                echo -e "\033[32m$linenum\t$(echo "$task" | sed 's/ DONE//')\033[0m"
+            else
+                echo -e "$linenum\t$task"
             fi
         done
     else
@@ -18,9 +52,18 @@ list_todos() {
     fi
 }
 
+
 add_todo() {
     TASK="$1"
-    echo "$TASK" >> "$TODO_FILE"
+    DUE_DATE="$2"
+    
+    # Ajouter la date d'échéance à la tâche si elle est fournie
+    if [ -n "$DUE_DATE" ]; then
+        echo "$TASK - Due: $DUE_DATE" >> "$TODO_FILE"
+    else
+        echo "$TASK" >> "$TODO_FILE"
+    fi
+
     echo "Tâche ajoutée : $TASK"
 }
 
@@ -33,90 +76,144 @@ remove_todo() {
     fi
 }
 
-prioritize_task() {
-    TASK_NUM=$1
-    TEMP_FILE=$(mktemp)
-
-    if [ -f "$TODO_FILE" ]; then
-        sed "${TASK_NUM}q;d" "$TODO_FILE" > "$TEMP_FILE"  
-
-        sed -i.bak "${TASK_NUM}d" "$TODO_FILE" 
-        sed -i "1s/^/$(cat $TEMP_FILE) PRIORITY\n/" "$TODO_FILE"  
-
-        echo -e "\033[31mTâche priorisée : \033[1m$(cat $TEMP_FILE)\033[0m"  
-        rm "$TEMP_FILE"
-    else
-        echo "Le fichier des tâches est vide."
-    fi
-}
-
-deprioritize_task() {
-    TASK_NUM=$1
-    TEMP_FILE=$(mktemp)
-
-    if [ -f "$TODO_FILE" ]; then
-        sed "${TASK_NUM}q;d" "$TODO_FILE" > "$TEMP_FILE"  
-
-        sed -i.bak "${TASK_NUM}d" "$TODO_FILE"  
-        sed -i "2a $(cat $TEMP_FILE | sed 's/ PRIORITY//')" "$TODO_FILE"  
-
-        echo "Tâche dépriorisée : $(cat $TEMP_FILE)"
-
-        rm "$TEMP_FILE"
-    else
-        echo "Le fichier des tâches est vide."
-    fi
-}
-
 mark_done() {
     TASK_NUM=$1
     TEMP_FILE=$(mktemp)
 
     if [ -f "$TODO_FILE" ]; then
-        sed "${TASK_NUM}q;d" "$TODO_FILE" > "$TEMP_FILE"  # Extraire la tâche à marquer comme terminée
+        sed "${TASK_NUM}q;d" "$TODO_FILE" > "$TEMP_FILE"
+        sed -i.bak "${TASK_NUM}d" "$TODO_FILE"
+        sed -i "2a $(cat $TEMP_FILE) DONE" "$TODO_FILE"
 
-        sed -i.bak "${TASK_NUM}d" "$TODO_FILE"  # Supprimer la tâche du fichier original
-        sed -i "2a $(cat $TEMP_FILE) DONE" "$TODO_FILE"  # Ajouter "DONE" à la tâche et la mettre à la fin
-
-        echo -e "\033[32mTâche marquée comme terminée : $(cat $TEMP_FILE)\033[0m"  # Afficher en vert
+        echo -e "\033[32mTâche marquée comme terminée : $(cat $TEMP_FILE)\033[0m"
         rm "$TEMP_FILE"
     else
         echo "Le fichier des tâches est vide."
     fi
 }
 
+list_today_todos() {
+    local today=$(date +"%d-%m-%Y")
+    if [ -f "$TODO_FILE" ]; then
+        grep -nE "Due: ${today}" "$TODO_FILE" | while IFS=: read -r linenum task; do
+            if [[ "$task" == *"PRIORITY"* ]]; then
+                echo -e "\033[31m$linenum\t$(echo "$task" | sed 's/ PRIORITY//')\033[0m"
+            elif [[ "$task" == *"DONE"* ]]; then
+                echo -e "\033[32m$linenum\t$(echo "$task" | sed 's/ DONE//')\033[0m"
+            else
+                echo -e "$linenum\t$task"
+            fi
+        done
+    else
+        echo "Aucune tâche enregistrée."
+    fi
+}
+
+list_context_todos() {
+    local context="+$1"
+    if [ -f "$TODO_FILE" ]; then
+        grep -nE "(^| )\\${context}( |$)" "$TODO_FILE" | while IFS=: read -r linenum task; do
+            if [[ "$task" == *"DONE"* ]]; then
+                echo -e "\033[32m$linenum\t$(echo "$task" | sed 's/ DONE//')\033[0m"
+            else
+                echo -e "$linenum\t$task"
+            fi
+        done
+    else
+        echo "Aucune tâche enregistrée."
+    fi
+}
+show_help() {
+    cat << EOF
+
+📘 Manuel d'utilisation de 'todo'
+
+USAGE :
+    todo <commande> [arguments]
+
+COMMANDES DISPONIBLES :
+
+✅  add "<tâche>" JJ-MM-AAAA
+    Ajouter une tâche avec une date d’échéance.
+    Tu peux inclure un contexte dans la tâche en ajoutant +motclé (ex: +bdd).
+    Exemple :
+        todo add "Lire le chapitre 2 +reseau" 15-04-2025
+        todo add "Faire le TP +bdd" 17-04-2025
+
+📋  list
+    Affiche toutes les tâches, les tâches terminées sont placées en bas.
+
+📆  today
+    Affiche les tâches dont la date d’échéance est aujourd’hui.
+
+📅  date JJ-MM-AAAA
+    Affiche les tâches prévues pour une date spécifique.
+    Exemple :
+        todo date 14-04-2025
+
+🔎  context <motclé>
+    Recherche les tâches associées à un contexte spécifique (ex: +reseau, +bdd).
+    Exemple :
+        todo context bdd
+        todo context reseau
+
+✅  done <numéro>
+    Marque une tâche comme terminée. Elle est déplacée en bas et affichée en vert.
+    Exemple :
+        todo done 2
+
+🗑️  remove <numéro>
+    Supprime la tâche avec le numéro donné.
+    Exemple :
+        todo remove 3
+
+📖  man
+    Affiche ce manuel.
+
+BONNES PRATIQUES :
+- Les contextes sont des mots-clés commençant par + (ex: +bdd, +perso).
+- Le champ "Due:" est automatiquement utilisé pour la date.
+- Reste cohérent dans l'écriture de tes contextes pour une recherche efficace.
+
+EOF
+}
+
+
+# Main
 if [ "$1" == "add" ]; then
     if [ -z "$2" ]; then
-        echo "Usage : todo add <tâche>"
+        echo "Usage : todo add <tâche> [date d'échéance]"
     else
-        add_todo "$2"
+        TASK="$2"
+        DUE_DATE="$3"
+        add_todo "$TASK" "$DUE_DATE"
     fi
 elif [ "$1" == "list" ]; then
     list_todos
+    elif [ "$1" == "date" ]; then
+    list_todos_by_date "$2"
 elif [ "$1" == "remove" ]; then
-    if [[ "$2" =~ ^[0-9]+$ ]]; then  
+    if [[ "$2" =~ ^[0-9]+$ ]]; then
         remove_todo "$2"
     else
         echo "Veuillez spécifier un numéro de tâche valide."
     fi
-elif [ "$1" == "pri" ]; then
-    if [[ "$2" =~ ^[0-9]+$ ]]; then  
-        prioritize_task "$2"
-    else
-        echo "Veuillez spécifier un numéro de tâche valide pour prioriser."
-    fi
-elif [ "$1" == "depri" ]; then
-    if [[ "$2" =~ ^[0-9]+$ ]]; then  
-        deprioritize_task "$2"
-    else
-        echo "Veuillez spécifier un numéro de tâche valide pour déprioriser."
-    fi
 elif [ "$1" == "done" ]; then
-    if [[ "$2" =~ ^[0-9]+$ ]]; then  
+    if [[ "$2" =~ ^[0-9]+$ ]]; then
         mark_done "$2"
     else
         echo "Veuillez spécifier un numéro de tâche valide pour marquer comme terminée."
     fi
+elif [ "$1" == "context" ]; then
+    if [ -z "$2" ]; then
+        echo "Veuillez spécifier un contexte."
+    else
+        list_context_todos "$2"
+    fi
+elif [ "$1" == "today" ]; then
+    list_today_todos
+    elif [ "$1" == "man" ]; then
+    show_help
 else
-    echo "Usage : todo add <tâche> | todo list | todo remove <numéro> | todo pri <numéro> | todo depri <numéro> | todo done <numéro>"
+    echo "Usage : todo add <tâche> [date d'échéance] | todo list | todo today | todo remove <numéro> | todo done <numéro> | todo context <contexte>"
 fi
