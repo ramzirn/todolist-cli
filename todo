@@ -215,5 +215,5 @@ elif [ "$1" == "today" ]; then
     elif [ "$1" == "man" ]; then
     show_help
 else
-    echo "Usage : todo add <tâche> [date d'échéance] | todo list | todo today | todo remove <numéro> | todo done <numéro> | todo context <contexte>"
+    echo "Manuel d'utilisation : <todo man>"
 fi
