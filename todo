@@ -39,17 +39,45 @@ list_todos_by_date() {
         return 1
     fi
 
-    if [ -f "$TODO_FILE" ]; then
-        grep -nE "Due: ${date_recherchee}" "$TODO_FILE" | while IFS=: read -r linenum task; do
-            if [[ "$task" == *"DONE"* ]]; then
-                echo -e "\033[32m$linenum\t$(echo "$task" | sed 's/ DONE//')\033[0m"
-            else
-                echo -e "$linenum\t$task"
-            fi
-        done
-    else
+    if [ ! -f "$TODO_FILE" ]; then
         echo "Aucune tâche enregistrée."
+        return
     fi
+
+    declare -A context_map
+    local linenum=0
+
+    while IFS= read -r line; do
+        linenum=$((linenum + 1))
+        if [[ "$line" == *"Due: ${date_recherchee}"* ]]; then
+            # Extraire le contexte
+            if [[ "$line" =~ \+([a-zA-Z0-9_-]+) ]]; then
+                context="${BASH_REMATCH[1]}"
+            else
+                context="autre"
+            fi
+
+            # Affichage avec couleur si DONE
+            if [[ "$line" == *"DONE"* ]]; then
+                display_line="\033[32m$linenum       $(echo "$line" | sed 's/ DONE//')\033[0m"
+            else
+                display_line="$linenum       $line"
+            fi
+
+            context_map["$context"]+="$display_line"$'\n'
+        fi
+    done < "$TODO_FILE"
+
+    if [ ${#context_map[@]} -eq 0 ]; then
+        echo "Aucune tâche trouvée pour la date $date_recherchee."
+        return
+    fi
+
+    for ctx in "${!context_map[@]}"; do
+        echo -e "\033[1m$ctx:\033[0m"
+        echo -e "${context_map[$ctx]}"
+        echo
+    done
 }
 
 
@@ -91,22 +119,86 @@ mark_done() {
         echo "Le fichier des tâches est vide."
     fi
 }
+list_todos_grouped_by_context() {
+    if [ ! -f "$TODO_FILE" ]; then
+        echo "Aucune tâche enregistrée."
+        return
+    fi
+
+    declare -A context_map
+    declare -A context_lines
+    local linenum=0
+
+    while IFS= read -r line; do
+        linenum=$((linenum + 1))
+
+        # Chercher le contexte (ex: +bdd, +compil, etc.)
+        if [[ "$line" =~ \+([a-zA-Z0-9_-]+) ]]; then
+            context="${BASH_REMATCH[1]}"
+        else
+            context="autre"
+        fi
+
+        # Retirer le marqueur DONE pour l'affichage
+        display_line="$line"
+        if [[ "$line" == *"DONE"* ]]; then
+            display_line=$(echo "$line" | sed 's/ DONE//')
+        fi
+
+        context_map["$context"]+="$linenum       $display_line"$'\n'
+        context_lines["$context"]+=1
+    done < "$TODO_FILE"
+
+    for ctx in "${!context_map[@]}"; do
+        echo -e "\033[1m$ctx:\033[0m"
+        echo -e "${context_map[$ctx]}"
+        echo
+    done
+}
+
 
 list_today_todos() {
     local today=$(date +"%d-%m-%Y")
-    if [ -f "$TODO_FILE" ]; then
-        grep -nE "Due: ${today}" "$TODO_FILE" | while IFS=: read -r linenum task; do
-            if [[ "$task" == *"PRIORITY"* ]]; then
-                echo -e "\033[31m$linenum\t$(echo "$task" | sed 's/ PRIORITY//')\033[0m"
-            elif [[ "$task" == *"DONE"* ]]; then
-                echo -e "\033[32m$linenum\t$(echo "$task" | sed 's/ DONE//')\033[0m"
-            else
-                echo -e "$linenum\t$task"
-            fi
-        done
-    else
+
+    if [ ! -f "$TODO_FILE" ]; then
         echo "Aucune tâche enregistrée."
+        return
     fi
+
+    declare -A context_map
+    local linenum=0
+
+    while IFS= read -r line; do
+        linenum=$((linenum + 1))
+        if [[ "$line" == *"Due: ${today}"* ]]; then
+            # Extraire le contexte
+            if [[ "$line" =~ \+([a-zA-Z0-9_-]+) ]]; then
+                context="${BASH_REMATCH[1]}"
+            else
+                context="autre"
+            fi
+
+            # Supprimer "DONE" pour l'affichage mais garder info
+            if [[ "$line" == *"DONE"* ]]; then
+                display_line="\033[32m$linenum       $(echo "$line" | sed 's/ DONE//')\033[0m"
+            else
+                display_line="$linenum       $line"
+            fi
+
+            context_map["$context"]+="$display_line"$'\n'
+        fi
+    done < "$TODO_FILE"
+
+    if [ ${#context_map[@]} -eq 0 ]; then
+        echo "Aucune tâche pour aujourd'hui."
+        return
+    fi
+
+    for ctx in "${!context_map[@]}"; do
+        echo -e "\033[1m$ctx:\033[0m"
+        echo -e "${context_map[$ctx]}"
+        echo
+    done
 }
 
 list_context_todos() {
@@ -189,7 +281,7 @@ if [ "$1" == "add" ]; then
         add_todo "$TASK" "$DUE_DATE"
     fi
 elif [ "$1" == "list" ]; then
-    list_todos
+    list_todos_grouped_by_context
     elif [ "$1" == "date" ]; then
     list_todos_by_date "$2"
 elif [ "$1" == "remove" ]; then
